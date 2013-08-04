@@ -4,7 +4,7 @@ function [P, data] = diis(data, P, S, X, F)
     end
 	data(end+1).P = P;
 	data(end).e = X'*(F*P*S-S*P*F)*X;
-	if length(data) > 5
+	if length(data) > 10
 		data(1) = [];
 	end
 	while true

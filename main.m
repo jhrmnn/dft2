@@ -5,8 +5,8 @@ function main(xyzfile, basisfile)
 	basisdef = read_basis(basisfile);
     basis = build_basis(basisdef, atoms);
     [S, H, basis] = calc1ints(basis, atoms); % also normalizes contractions
-    tic; eri = calc2ints(basis); toc
+    eri = calc2ints(basis);
     E = hf(S, H, eri, N);
     E = E+nuclear(atoms);
-    fprintf('Energy: %.10f\n', E);
+    fprintf('Energy: %.15f\n', E);
 end
