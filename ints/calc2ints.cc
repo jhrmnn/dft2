@@ -8,6 +8,16 @@
 using namespace std;
 using namespace libint2;
 
+struct Pair_data_t {
+    double zeta;
+    double oo2z;
+    double AB[3];
+    double P[3];
+    double PA[3];
+    double K;
+    double cacb;
+};
+
 struct Basis_func_t {
     double R[3];
     unsigned int l;
@@ -18,11 +28,12 @@ struct Basis_func_t {
 
 void print_clock(clock_t &start, clock_t &end, string name);
 
+void prepare_pair_data(Pair_data_t &pair_data,
+                       double ca, double zetaa, double A[3],
+                       double cb, double zetab, double B[3]);
+
 void prepare_data(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
-                  double ca, double zetaa, double A[3], 
-                  double cb, double zetab, double B[3],
-                  double cc, double zetac, double C[3], 
-                  double cd, double zetad, double D[3]);
+                  Pair_data_t &pair_ab, Pair_data_t &pair_cd);
 
 void calc2ints(double *eris, int nbasis, vector<Basis_func_t> &basis)
 {
@@ -31,13 +42,30 @@ void calc2ints(double *eris, int nbasis, vector<Basis_func_t> &basis)
     int max_l = 0;
     int nshell = basis.size();
     vector<int> idx(nshell);
+    vector<int> idx_prim(nshell);
     for (int i = 0; i < nshell; i++) {
         if (basis[i].contr > max_contr)
             max_contr = basis[i].contr;
         if (basis[i].l > max_l)
             max_l = basis[i].l;
         idx[i] = (i == 0) ? 0 : idx[i-1]+(basis[i-1].l+1)*(basis[i-1].l+2)/2;
+        idx_prim[i] = (i == 0) ? 0 : idx_prim[i-1]+basis[i-1].contr;
     }
+    int nprims = idx_prim[nshell-1]+basis[nshell-1].contr;
+
+    vector<Pair_data_t> pair_data(nprims*nprims);
+    for (int s0 = 0; s0 < nshell; s0++) {
+    for (int s1 = 0; s1 < nshell; s1++) {
+        if (basis[s0].l < basis[s1].l)
+            continue;
+        for (int p0 = 0; p0 < basis[s0].contr; p0++) {
+        for (int p1 = 0; p1 < basis[s1].contr; p1++) {
+            prepare_pair_data(pair_data[(idx_prim[s0]+p0)+(idx_prim[s1]+p1)*nprims],
+                              basis[s0].d[p0], basis[s0].zeta[p0], basis[s0].R,
+                              basis[s1].d[p1], basis[s1].zeta[p1], basis[s1].R);
+        }}
+    }}
+
     int max_contr4 = max_contr*max_contr*max_contr*max_contr;
     vector<Libint_eri_t> erieval(max_contr4);
     libint2_init_eri(&erieval[0], max_l, 0);
@@ -63,10 +91,8 @@ void calc2ints(double *eris, int nbasis, vector<Basis_func_t> &basis)
         for (int p2 = 0; p2 < basis[s2].contr; p2++) {
         for (int p3 = 0; p3 < basis[s3].contr; p3++) {
             prepare_data(erieval[p0123], fmeval, max_m,
-                         basis[s0].d[p0], basis[s0].zeta[p0], basis[s0].R,
-                         basis[s1].d[p1], basis[s1].zeta[p1], basis[s1].R,
-                         basis[s2].d[p2], basis[s2].zeta[p2], basis[s2].R,
-                         basis[s3].d[p3], basis[s3].zeta[p3], basis[s3].R);
+                         pair_data[(idx_prim[s0]+p0)+(idx_prim[s1]+p1)*nprims],
+                         pair_data[(idx_prim[s2]+p2)+(idx_prim[s3]+p3)*nprims]);
             p0123++;
         }}}}
         timer += clock()-tmp;
@@ -98,68 +124,66 @@ void calc2ints(double *eris, int nbasis, vector<Basis_func_t> &basis)
     libint2_static_cleanup();
 }
 
-void prepare_data(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
-                  double ca, double zetaa, double A[3], 
-                  double cb, double zetab, double B[3],
-                  double cc, double zetac, double C[3], 
-                  double cd, double zetad, double D[3])
+void prepare_pair_data(Pair_data_t &pair_data,
+                       double ca, double zetaa, double A[3],
+                       double cb, double zetab, double B[3])
 {
-    double zeta = zetaa+zetab;
-    double ABx = A[0]-B[0];
-    double ABy = A[1]-B[1];
-    double ABz = A[2]-B[2];
-    double Px = (zetaa*A[0]+zetab*B[0])/zeta;
-    double Py = (zetaa*A[1]+zetab*B[1])/zeta;
-    double Pz = (zetaa*A[2]+zetab*B[2])/zeta;
-    double PAx = Px-A[0];
-    double PAy = Py-A[1];
-    double PAz = Pz-A[2];
-    erieval.AB_x[0] = ABx;
-    erieval.AB_y[0] = ABy;
-    erieval.AB_z[0] = ABz;
-    erieval.PA_x[0] = PAx;
-    erieval.PA_y[0] = PAy;
-    erieval.PA_z[0] = PAz;
-    erieval.oo2z[0] = 0.5/zeta;
-    double eta = zetac+zetad;
-    double CDx = C[0]-D[0];
-    double CDy = C[1]-D[1];
-    double CDz = C[2]-D[2];
-    double Qx = (zetac*C[0]+zetad*D[0])/eta;
-    double Qy = (zetac*C[1]+zetad*D[1])/eta;
-    double Qz = (zetac*C[2]+zetad*D[2])/eta;
-    double QCx = Qx-C[0];
-    double QCy = Qy-C[1];
-    double QCz = Qz-C[2];
-    erieval.CD_x[0] = CDx;
-    erieval.CD_y[0] = CDy;
-    erieval.CD_z[0] = CDz;
-    erieval.QC_x[0] = QCx;
-    erieval.QC_y[0] = QCy;
-    erieval.QC_z[0] = QCz;
-    erieval.oo2e[0] = 0.5/eta;
-    double PQx = Px-Qx;
-    double PQy = Py-Qy;
-    double PQz = Pz-Qz;
-    double Wx = (zeta*Px+eta*Qx)/(zeta+eta);
-    double Wy = (zeta*Py+eta*Qy)/(zeta+eta);
-    double Wz = (zeta*Pz+eta*Qz)/(zeta+eta);
-    double rho =zeta*eta/(zeta+eta);
-    erieval.WP_x[0] = Wx-Px;
-    erieval.WP_y[0] = Wy-Py;
-    erieval.WP_z[0] = Wz-Pz;
-    erieval.WQ_x[0] = Wx-Qx;
-    erieval.WQ_y[0] = Wy-Qy;
-    erieval.WQ_z[0] = Wz-Qz;
-    erieval.oo2ze[0] = 0.5/(zeta+eta);
-    erieval.roz[0] = rho/zeta;
-    erieval.roe[0] = rho/eta;
-    double AB2 = ABx*ABx+ABy*ABy+ABz*ABz;
-    double CD2 = CDx*CDx+CDy*CDy+CDz*CDz;
-    double PQ2 = PQx*PQx+PQy*PQy+PQz*PQz;
-    double K1 = exp(-zetaa*zetab*AB2/zeta);
-    double K2 = exp(-zetac*zetad*CD2/eta);
-    double prefactor = 2*pow(M_PI, 2.5)*K1*K2/(zeta*eta*sqrt(zeta+eta))*ca*cb*cc*cd;
+    pair_data.zeta = zetaa+zetab;
+    pair_data.oo2z = 0.5/pair_data.zeta;
+    pair_data.AB[0] = A[0]-B[0];
+    pair_data.AB[1] = A[1]-B[1];
+    pair_data.AB[2] = A[2]-B[2];
+    pair_data.P[0] = (zetaa*A[0]+zetab*B[0])/pair_data.zeta;
+    pair_data.P[1] = (zetaa*A[1]+zetab*B[1])/pair_data.zeta;
+    pair_data.P[2] = (zetaa*A[2]+zetab*B[2])/pair_data.zeta;
+    pair_data.PA[0] = pair_data.P[0]-A[0];
+    pair_data.PA[1] = pair_data.P[1]-A[1];
+    pair_data.PA[2] = pair_data.P[2]-A[2];
+    double AB2 = pair_data.AB[0]*pair_data.AB[0]+pair_data.AB[1]*pair_data.AB[1]
+                 +pair_data.AB[2]*pair_data.AB[2];
+    pair_data.K = exp(-zetaa*zetab*AB2/pair_data.zeta)/pair_data.zeta;
+    pair_data.cacb = ca*cb;
+}
+
+void prepare_data(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
+                  Pair_data_t &pair_ab, Pair_data_t &pair_cd)
+{
+    erieval.AB_x[0] = pair_ab.AB[0];
+    erieval.AB_y[0] = pair_ab.AB[1];
+    erieval.AB_z[0] = pair_ab.AB[2];
+    erieval.PA_x[0] = pair_ab.PA[0];
+    erieval.PA_y[0] = pair_ab.PA[1];
+    erieval.PA_z[0] = pair_ab.PA[2];
+    erieval.oo2z[0] = pair_ab.oo2z;
+    erieval.CD_x[0] = pair_cd.AB[0];
+    erieval.CD_y[0] = pair_cd.AB[1];
+    erieval.CD_z[0] = pair_cd.AB[2];
+    erieval.QC_x[0] = pair_cd.PA[0];
+    erieval.QC_y[0] = pair_cd.PA[1];
+    erieval.QC_z[0] = pair_cd.PA[2];
+    erieval.oo2e[0] = pair_cd.oo2z;
+    double PQ[3];
+    PQ[0] = pair_ab.P[0]-pair_cd.P[0];
+    PQ[1] = pair_ab.P[1]-pair_cd.P[1];
+    PQ[2] = pair_ab.P[2]-pair_cd.P[2];
+    double zetapeta = pair_ab.zeta+pair_cd.zeta;
+    double W[3];
+    W[0] = (pair_ab.zeta*pair_ab.P[0]+pair_cd.zeta*pair_cd.P[0])/zetapeta;
+    W[1] = (pair_ab.zeta*pair_ab.P[1]+pair_cd.zeta*pair_cd.P[1])/zetapeta;
+    W[2] = (pair_ab.zeta*pair_ab.P[2]+pair_cd.zeta*pair_cd.P[2])/zetapeta;
+    double rho = pair_ab.zeta*pair_cd.zeta/zetapeta;
+    erieval.WP_x[0] = W[0]-pair_ab.P[0];
+    erieval.WP_y[0] = W[1]-pair_ab.P[1];
+    erieval.WP_z[0] = W[2]-pair_ab.P[2];
+    erieval.WQ_x[0] = W[0]-pair_cd.P[0];
+    erieval.WQ_y[0] = W[1]-pair_cd.P[1];
+    erieval.WQ_z[0] = W[2]-pair_cd.P[2];
+    erieval.oo2ze[0] = 0.5/zetapeta;
+    erieval.roz[0] = rho/pair_ab.zeta;
+    erieval.roe[0] = rho/pair_cd.zeta;
+    double PQ2 = PQ[0]*PQ[0]+PQ[1]*PQ[1]+PQ[2]*PQ[2];
+    const double twopi25 = 34.98683665524972497; // 2*pi^2.5
+    double prefactor = twopi25*pair_ab.K*pair_cd.K/sqrt(zetapeta)*pair_ab.cacb*pair_cd.cacb;
     double* F = new double[max_m+1];
     fmeval.eval(F, rho*PQ2, max_m);
     switch (max_m)
