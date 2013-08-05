@@ -1,8 +1,8 @@
-function [P, data] = diis(data, P, S, X, F)
+function [F, data] = diis(data, P, S, X, F)
 	if isempty(data)
-        data = struct('P', {}, 'e', {});
+        data = struct('F', {}, 'e', {});
     end
-	data(end+1).P = P;
+	data(end+1).F = F;
 	data(end).e = X'*(F*P*S-S*P*F)*X;
 	if length(data) > 10
 		data(1) = [];
@@ -17,9 +17,9 @@ function [P, data] = diis(data, P, S, X, F)
 	end
 	m = length(data);
 	c = B\[zeros(m, 1); -1]; % obtain coeffs
-	P = zeros(size(data(1).P));
+	F = zeros(size(data(1).F));
 	for i = 1:m
-		P = P + c(i)*data(i).P; % DIIS trial density
+		F = F + c(i)*data(i).F; % DIIS trial density
 	end
 end
 

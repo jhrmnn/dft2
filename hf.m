@@ -11,8 +11,7 @@ function E = hf(S, H, eri, N)
             break
         end
         F = H+tprod(eri_JK, [1 2 -1 -2], P, [-1 -2]);
-        [P, diis_data] = diis(diis_data, P, S, X, F);
-        F = H+tprod(eri_JK, [1 2 -1 -2], P, [-1 -2]);
+        [F, diis_data] = diis(diis_data, P, S, X, F);
         P_old = P;
     end
     E = 1/2*tprod(P, [-1 -2], H+F, [-1 -2]);
