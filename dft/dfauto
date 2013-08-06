@@ -1011,7 +1011,7 @@ read("$dfpro");
 read("$dftemp");
 # define procedure fortran
 fortran:=proc(a)
-    Text(Fortran(evalf(a),precision=double,optimize,output=string));
+    Text(Fortran(evalf(a),precision=double,optimize,output=string,limitvariablelength=false));
 end:
 # define procedure Text
 Text:=proc(str)
