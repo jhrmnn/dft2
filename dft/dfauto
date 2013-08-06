@@ -1,0 +1,1571 @@
+#!/bin/sh
+#$Id: dfauto,v 1.114 2000/12/18 12:30:43 stranger Exp $
+
+if [ x`uname -s` = x"OSF1" ]; then
+  if [ x"$BIN_SH" != x"xpg4" ]; then 
+    myshell=`ps -fu $USER | grep $$ | grep -v grep `
+    myshell=`echo $myshell | awk '{print $8}'`
+    if test x"$myshell" != x"ksh" -a x"$myshell" != x"/bin/ksh" ; then
+    echo "Sorry but the OSF1/Digital Unix/Tru64 Unix/etc. shell is broken"
+    echo "with respect to the getopts command."
+    echo "To fix this please type"
+    echo "BIN_SH=xpg4; export BIN_SH"
+    echo "and rerun dfauto"
+    echo "or type:" 
+    echo "ksh dfauto [options] etc."
+    exit
+    fi
+  fi
+fi
+
+usage() {
+cat <<!
+usage: $0 [-lpdz] [-x ptsize] [-t paper] [-f font] [-mras] [-o ffile] < .df files >
+
+-l        produce latex only, no fortran
+-p        postscript output, no dvi
+-d        dvi output with postscript output
+-z        suppress G in manual
+-x ptsize point size
+-t paper  paper size
+-f font   font option
+-m        produce fortran only, no latex
+-r        remove subroutine
+-a        append subroutine
+-s        replace subroutine
+-o ffile  fortran file
+The remaining arguments < df files > are taken as input file names
+!
+}
+
+ps=false
+dvi=true
+texonly=false
+paper=a4
+ptsize=12
+font=
+if kpsewhich mathptm.sty >/dev/null 2>/dev/null ; then font=times ; fi
+fortonly=false
+remove=false
+append=true
+ffile=dftuser
+noG=false
+
+outputgiven=0
+
+while getopts lpdzx:t:f:mraso: c
+do
+	case $c in
+# fortran generation only
+	m)      fortonly=true;;
+
+	r)	remove=true;
+		append=false;;
+
+	a)	append=true;;
+
+	s)	remove=true;
+		append=true;;
+# manual generation only
+	l)	texonly=true;;
+
+	p)	if [ $outputgiven = 0 ]; then dvi=false ps=false ; fi;
+		ps=true dvi=false outputgiven=1;;
+
+	d)	if [ $outputgiven = 0 ]; then dvi=false ps=false ; fi;
+		dvi=true outputgiven=1;;
+
+	x)	ptsize="$OPTARG";;
+
+	t)	paper="$OPTARG";;
+
+	f)      font="$OPTARG";;
+# fortran file to be amended
+	o)	ffile="$OPTARG";;
+
+	z)      noG=true;;
+
+	\?)	echo Bad option $c in $0;
+	        usage;
+		exit 2 ;;
+	esac
+done
+
+shift `expr $OPTIND - 1`
+# if no other arguments given exit printing usage
+if [ $# = 0 ]; then usage; exit 1 ; fi
+#removal of unwanted functionals
+if [ x$remove = xtrue ] ; then
+
+  ftest=${ffile%.f}
+  ffile=${ftest}.f
+# test to see if ffile exists
+  if ! test -f $ffile ; then
+    echo $0 requires $ffile to exist ;
+    exit
+  fi
+# test to see if ffile can read
+  if [ ! -r $ffile ]; then
+    echo $ffile is not readable ;
+    exit
+  fi
+# test to see if ffile can be written to
+  if [ ! -w $ffile ]; then
+    echo Cannot write to $ffile ;
+    exit
+  fi
+# loop over .df files 
+  for i in $* ; do
+# remove subroutine  
+    dftest=${i%.df}
+    fnroot=$dftest
+    df=${fnroot}.df
+    FNROOT=`echo $fnroot | tr a-z A-Z`
+    rmtempfile1=${TMPDIR:-/tmp}/r$$
+    rmtempfile2=${TMPDIR:-/tmp}/s$$
+    rmtempfile3=${TMPDIR:-/tmp}/t$$
+    cp $ffile $rmtempfile1
+    sed '/c\:'$FNROOT'callstart/,/c\:'$FNROOT'callend/d' $rmtempfile1 > $rmtempfile2
+    sed '/c\:'${FNROOT}'subrstart/,/c\:'${FNROOT}'subrend/d' $rmtempfile2 > $rmtempfile3
+    mv $rmtempfile3 $ffile
+    rm -f $rmtempfile1
+    rm -f $rmtempfile2
+    echo Removing $FNROOT from $ffile 
+
+  done
+
+fi #remove
+# if only removing is to be done the exit 
+if [ x$append = xfalse ] ;then
+  exit
+fi
+# if both -m (generate fortran only) and -l (only generate manual) are
+#specified dfauto produces no usable output - exit
+if [ x$fortonly = xtrue ] && [ x$texonly = xtrue ] ; then
+  echo dfauto will produce nothing as both m and l flags were specified
+  exit
+fi
+# protect names a,b,ab,ba,s,s_,ss,ss_,s_s,s_s_
+dfpro=${TMPDIR:-/tmp}/p$$
+
+cat <<EOF > $dfpro
+protect('a'):
+protect('b'):
+protect('ab'):
+protect('ba'):
+protect('aa'):
+protect('bb'):
+protect('s'):
+protect('s_'):
+protect('ss_'):
+protect('s_s'):
+protect('s_s_'):
+protect('ss'):
+
+EOF
+# this file must be read in every time maple is fired up to manipulate K
+if [ x$fortonly = xfalse ] ; then
+# if paper has been set to a4 reset it to a4paper, as required by latex
+if [ x$paper = xa4 ] ; then paper=a4paper ;fi
+
+if [ x$font != x ] ; then ptsize=,$ptsize ; fi
+# set .bib file
+bfile=acg
+bibfile=${bfile}.bib
+> $bibfile
+# remove existing .bib file
+rm -f ${bfile}.aux ${bfile}.bbl
+# preamble information in wrapping tex file
+cat > ${bfile}.tex  <<TEXENDS
+\documentclass[${ptsize}pt,$paper]{article}
+TEXENDS
+
+if [ x$font = xtimes ]; then
+
+cat >> ${bfile}.tex  <<TEXENDS
+\usepackage{mathptm}
+\renewcommand{\encodingdefault}{T1}
+\renewcommand{\ttdefault}{pcr}
+TEXENDS
+
+fi
+
+cat >> ${bfile}.tex  <<TEXENDS
+\usepackage{amstext}
+\usepackage{breqn}
+\usepackage{inlinebib}
+\def\chapter{\section}
+\def\bibname{Bibliography}
+\bibliographystyle{inlinebib}
+\setlength{\oddsidemargin}{0pt}
+\newcommand\acgsection[2]{\section*{#1: #2}}
+\parskip=2ex
+\parindent=0mm
+\addtolength{\oddsidemargin}{-0.05\textwidth}
+\addtolength{\topmargin}{-0.1\textheight}
+\setlength{\textwidth}{1.1\textwidth}
+\setlength{\textheight}{1.1\textheight}
+\renewcommand{\baselinestretch}{1.3}
+\begin{document}
+TEXENDS
+# substitute known variables (rho(s) etc.) for their latex input
+tex_subs=${TMPDIR:-/tmp}/b$$
+
+cat > $tex_subs <<EOF
+\`latex/rho\`:=proc(z)    \
+  if z = s then           \
+    "\\\rho_\{s\}"        \
+  elif z = s_ then        \
+    "\\\rho_\{\\\bar s\}" \
+  elif z = a then         \
+    "\\\rho_\{\\\alpha\}" \
+  elif z = b then         \
+    "\\\rho_\{\\\beta\}"  \
+  fi \
+end;
+
+\`latex/sigma\`:=proc(z) \
+  if z = ss then \
+    "\\\sigma_\{ss\}" \
+  elif z = s_s_ then \
+    "\\\sigma_\{\\\bar s \\\bar s\}" \
+  elif z = ss_ then \
+    "\\\sigma_\{s \\\bar s\}" \
+  elif z = s_s then \
+    "\\\sigma_\{s \\\bar s\}"\
+  elif z = aa then \
+    "\\\sigma_\{\\\alpha \\\alpha\}" \
+  elif z = bb then \
+    "\\\sigma_\{\\\beta \\\beta\}" \
+  elif z = ab then \
+    "\\\qsigma_\{\\\alpha \\\beta\}" \
+  elif z = ba then \
+    "\\\sigma_\{\\\alpha \\\beta\}"  \
+  fi \
+end;
+
+\`latex/chi\`:=proc(z) \
+  if z = s then \
+    "\\\chi_\{s\}" \
+  elif z = s_ then \
+    "\\\chi_\{\\\bar s\}" \
+  elif z = a then \
+    "\\\chi_\{\\\alpha\}" \
+  elif z = b then \
+    "\\\chi_\{\\\beta\}" \
+  fi \
+end;
+
+\`latex/upsilon\`:=proc(z) \
+  if z = s then \
+    "\\\upsilon_\{s\}" \
+  elif z = s_ then \
+    "\\\upsilon_\{\\\bar s\}" \
+  elif z = a then \
+    "\\\upsilon_\{\\\alpha\}" \
+  elif z = b then \
+    "\\\upsilon_\{\\\beta\}" \
+  fi \
+end;
+
+\`latex/tau\`:=proc(z) \
+  if z = s then \
+    "\\\tau_\{s\}" \
+  elif z = s_ then \
+    "\\\tau_\{\\\bar s\}" \
+  elif z = a then \
+    "\\\tau_\{\\\alpha\}" \
+  elif z = b then \
+    "\\\tau_\{\\\beta\}" \
+  fi \
+end;
+
+EOF
+# some .df files may not contain references - count the number that do
+reftot=0
+# loop over .df files
+for i in $* ; do
+
+dftest=${i%.df}
+fnroot=$dftest
+df=${fnroot}.df
+FNROOT=`echo $fnroot | tr a-z A-Z`
+# strip out ;'s at ends of lines and replace with :'s to stop maple printing
+# everything that it is doing
+dftemp=${TMPDIR:-/tmp}/f$$
+sed -e 's/ *$//' -e 's/;$/:/' $df > $dftemp
+# set .tex file for .df file
+tfile=${fnroot}.tex
+
+echo "ACG: $df -->  $tfile"
+
+cat << EOF >> ${bfile}.tex
+\input $tfile
+EOF
+> $tfile
+# create a list of all of the defined quantities in fn.df - these will be counted by listcount
+list=`sed -e "s/^ *//" -e "/^[a-zA-Z0-9_,() ]*\[*[a-zA-Z0-9_,() ]*\]* *:=/p" -e "d" $dftemp | sed -e 's/ *:=.*$//'`
+# initialize counters
+sums=0
+listcount=0
+title=0
+ref=0
+blurb=0
+Gcount=0
+# typeset title if it exixts in fn.df 
+for i in $list ; do
+if [ x$i = xtitle ] ; then 
+title=$(($title+1))
+expressfile=${TMPDIR:-/tmp}/a$$
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+maple -q <<EOF >> $tfile
+`cat $expressfile`
+printf("\\\acgsection{$FNROOT}{%s}\n",$i);
+quit
+EOF
+
+fi
+rm -f $expressfile
+done
+
+if [ $(($title)) = 0 ] ; then
+maple -q <<EOF >> $tfile
+printf("\\\acgsection{$FNROOT}{}\n");
+quit
+EOF
+fi
+# typeset reference if it exixts in fn.df and enter in acg.bib
+for i in $list ; do
+
+if [ x$i = xref ] ; then 
+ref=$(($ref+1))
+reftot=$(($reftot+1))
+expressfile=${TMPDIR:-/tmp}/a$$
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+l=`sed -e '/ref/d' -e 's/^[@a-zA-Z0-9 ,()"]*{//' $expressfile`
+
+m=`echo $l | sed -e 's/,.*//'`
+
+cat << EOF >> $tfile
+\fullycite{$m}
+
+EOF
+
+maple -q <<EOF >> $bibfile
+`cat $expressfile`
+printf("%s\n\n",$i);
+quit
+EOF
+
+fi
+rm -f $expressfile
+
+done
+# typeset description of functional if it exixts in fn.df
+for i in $list ; do
+
+if [ x$i = xblurb ] ; then 
+blurb=$(($blurb+1))
+expressfile=${TMPDIR:-/tmp}/a$$
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+maple -q <<EOF >> $tfile
+`cat $expressfile`
+printf("%s\n\n",$i);
+quit
+EOF
+
+fi
+rm -f $expressfile
+done
+# equation for K
+cat <<EOF >> $tfile
+\begin{dmath*}
+K=
+EOF
+
+for i in $list ; do
+
+listcount=$(($listcount+1))
+# see if G appears
+if [ x$i = xG ] ; then
+Gcount=$((Gcount+1))
+fi
+# typeset f if it exists
+if [ x$i = xf ] ; then 
+sums=$(($sums+1))
+expressfile=${TMPDIR:-/tmp}/a$$
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+latex($i);
+quit
+EOF
+
+fi
+rm -f $expressfile
+done
+# typeset g if it exists
+for i in $list ; do
+if [ x$i = xg ] ; then 
+sums=$(($sums+1))
+expressfile=${TMPDIR:-/tmp}/a$$
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+# if f and g exist sums=2 and a plus is needed between f and g
+if  [ $sums = 2 ] ; then
+cat >> $tfile <<EOF
+\\\\
++
+EOF
+fi
+# g is spin summed
+cat >> $tfile <<EOF
+\sum_s
+EOF
+
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+latex($i);
+quit
+EOF
+ 
+fi
+rm -f $expressfile
+done
+# test to see if there are any other definitions than f, g, G, title, ref and blurb
+# in fn.df and if so place a comma after the equation defining K, else a full stop
+if [ $(($listcount -$sums -$ref -$title -$blurb -$Gcount)) = 0 ] ;then
+cat >> $tfile <<EOF
+.\end{dmath*}
+EOF
+else
+cat >> $tfile <<EOF
+,\end{dmath*}
+where
+EOF
+
+count=0
+for i in $list ; do
+
+if [ x$i != xf ] && [ x$i != xg ] &&[ x$i != xG ] && [ x$i != xtitle ] && [ x$i != xref ] && [ x$i != xblurb ]; then 
+
+j=`echo $i | sed 's/\[[a-zA-Z0-9,_() ]*\]//'`
+k=`echo $i | sed -e 's/\[/\\\[/' -e 's/\]/\\\]/'`
+
+expressfile=${TMPDIR:-/tmp}/a$$
+
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$k *:=/,/[;:] *$/p" -e "d" > $expressfile
+# arrays are typeset lastly
+if [ `grep -c -i array $expressfile` -eq 0 ]; then
+count=$(($count+1))
+# procedures have to be manipulated differently than normal definitions
+#test if list entry is a procedure (proc)
+if [ `grep -c -i proc $expressfile` -eq 0 ]; then
+
+cat >> $tfile <<EOF
+\begin{dmath*}
+EOF
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+eq:=$k:unassign('$j'):latex($i=eq);$i=eq:
+quit
+EOF
+
+else
+
+l=`cat $expressfile | sed -e '/proc/!d' -e 's/proc//' $expressfile`
+
+m=$i$l
+
+n=`cat $expressfile | sed -e '/proc/d' -e '/end:/d' -e '/:=/d'`
+
+cat >> $tfile <<EOF
+\begin{dmath*}
+EOF
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+latex($m=$n);
+quit
+EOF
+fi
+# test to see if the final or last but 1 entry in the list is being typeset
+# and append the appropriate punctuation
+if [ $count = $(($listcount -$sums -$ref -$title -$blurb -$Gcount)) ] ; then
+cat >> $tfile <<EOF
+.\end{dmath*}
+EOF
+elif [ $count = $(($listcount -$sums -$ref -$title -$blurb -1 -$Gcount)) ] ; then 
+cat >> $tfile <<EOF
+\end{dmath*}
+and
+EOF
+else
+cat >> $tfile <<EOF
+,\end{dmath*}
+EOF
+fi
+
+fi # procedure
+
+fi # arrays
+
+rm -f $expressfile
+done
+# now do arrays
+for i in $list ; do
+
+if [ x$i != xf ] && [ x$i != xg ] && [ x$i != xG ] && [ x$i != xtitle ] && [ x$i != xref ] && [ x$i != xblurb ]; then
+
+expressfile=${TMPDIR:-/tmp}/a$$
+
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+if [ `grep -c -i array $expressfile` -gt 0 ]; then
+
+count=$(($count+1))
+
+cat >> $tfile <<EOF
+\begin{dmath*}
+EOF
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+unassign('$i'):latex($i);
+quit
+EOF
+
+cat >> $tfile <<EOF
+=
+EOF
+
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+latex($i);
+quit
+EOF
+# test to see if the final or last but 1 entry in the list is being typeset
+# and append the appropriate punctuation
+if [ $count = $(($listcount -$sums -$ref -$title -$blurb -$Gcount)) ] ; then
+cat >> $tfile <<EOF
+.\end{dmath*}
+EOF
+elif [ $count = $(($listcount -$sums -$ref -$title -$blurb -$Gcount -1)) ] ; then 
+cat >> $tfile <<EOF
+\end{dmath*}
+and
+EOF
+else
+cat >> $tfile <<EOF
+,\end{dmath*}
+EOF
+fi
+
+fi # arrays
+
+fi
+
+rm -f $expressfile
+done
+
+fi
+
+# G comes last
+if [ x$noG = xfalse ] ; then
+for i in $list ; do
+
+if [ x$i = xG ]; then
+
+expressfile=${TMPDIR:-/tmp}/a$$
+
+sed -e 's/:=/:=\\\
+/' $dftemp | \
+sed -e "/^ *$i *:=/,/[;:] *$/p" -e "d" > $expressfile
+
+cat >> $tfile <<EOF
+To avoid singularities in the limit $\rho_{\bar{s}}\rightarrow 0$
+\begin{dmath*}
+G=
+EOF
+
+maple -q <<EOF >> $tfile
+read("$dfpro"):
+read("$tex_subs"):
+`cat $expressfile`
+latex($i);
+quit
+EOF
+
+cat >> $tfile <<EOF
+.\end{dmath*}
+EOF
+
+fi
+rm -f $expressfile
+done
+
+fi #noG
+
+# typeset archsinh, arccosh and arctanh correctly
+arcsinhrep=${TMPDIR:-/tmp}/g$$
+sed "s/\\\it arcsinh/\\\,\\\text{arcsinh}/" $tfile > $arcsinhrep
+mv $arcsinhrep $tfile
+
+arccoshrep=${TMPDIR:-/tmp}/g$$
+sed "s/\\\it arccosh/\\\,\\\text{arccosh}/" $tfile > $arccoshrep
+mv $arccoshrep $tfile
+
+arctanhrep=${TMPDIR:-/tmp}/g$$
+sed "s/\\\it arctanh/\\\,\\\text{arctanh}/" $tfile > $arctanhrep
+mv $arctanhrep $tfile
+
+rm -f $dftemp
+
+done # .df files
+# create a bibliography at the end
+cat >> ${bfile}.tex << EOF
+\clearpage
+\bibliography{$bfile}
+\end{document}
+EOF
+# do latex
+if ${LATEX:-latex} "\nonstopmode\input ${bfile}.tex" >/dev/null 2>/dev/null ; then
+# if no references were given bibtex doesn't happen
+  if [ $reftot != 0 ] ;then
+    if BIBINPUTS=. ${BIBTEX:-bibtex} ${bfile} >/dev/null 2>/dev/null ; then
+      ${LATEX:-latex} ${bfile}.tex >/dev/null 2>/dev/null
+      ${LATEX:-latex} ${bfile}.tex >/dev/null 2>/dev/null
+    else
+      echo "Problem with BibTeX run"
+      cat ${bfile}.blg
+      exit 1
+    fi
+  fi
+else
+  echo "Problem with LaTeX syntax?"
+  cat ${bfile}.log
+  exit 1
+fi
+# ps output
+if [ x$ps = xtrue ] ; then
+dvips ${bfile} -o ${bfile}.ps
+# if -d flag not specified .dvi file trashed
+if [ x$dvi = xfalse ] ; then
+rm -f ${bfile}.dvi
+fi
+fi
+
+rm -f $tex_subs
+
+fi
+# fortran generation
+if [ x$texonly = xfalse ] ; then
+# create a file containing the grid points and their corresponding weights
+# to be used in testing and evaluating the functionals for hydrogen
+# first entry is how many points there are
+gridw=${TMPDIR:-/tmp}/z$$
+
+cat <<EOF > $gridw
+90
+0.0000066350792659  0.0000000000000037
+0.0000530808806655  0.0000000000009397
+0.0001791502307580  0.0000000000240851
+0.0004246628246079  0.0000000002406030
+0.0008294531533929  0.0000000014343379
+0.0014333816091784  0.0000000061688804
+0.0022763487759451  0.0000000211800559
+0.0033983129216163  0.0000000616676747
+0.0048393107129853  0.0000001583171861
+0.0066394811839943  0.0000003680447934
+0.0088390929979581  0.0000007896310584
+0.0114785750559259  0.0000015855909433
+0.0145985505166738  0.0000030118260414
+0.0182398743087363  0.0000054568214120
+0.0224436742316554  0.0000094923896020
+0.0272513957622518  0.0000159382334834
+0.0327048507024499  0.0000259429036804
+0.0388462698281220  0.0000410840728533
+0.0457183597238029  0.0000634914463441
+0.0533643640162069  0.0000959960865098
+0.0618281292505249  0.0001423104579544
+0.0711541756878687  0.0002072441163285
+0.0813877733403082  0.0002969606803081
+0.0925750236022354  0.0004192825636030
+0.1047629468837825  0.0005840509237140
+0.1179995767043675  0.0008035494332225
+0.1323340607628694  0.0010930018294024
+0.1478167695662981  0.0014711547868860
+0.1644994132721102  0.0019609595316767
+0.1824351674816896  0.0025903678279855
+0.2016788088153287  0.0033932605886934
+0.2222868612038542  0.0044105304662892
+0.2443177539507753  0.0056913434719026
+0.2678319927535747  0.0072946090650118
+0.2928923450261828  0.0092906934016802
+0.3195640410397367  0.0117634167040591
+0.3479149925990768  0.0148123832390303
+0.3780160312022918  0.0185557014417645
+0.4099411678951390  0.0231331626282736
+0.4437678773373317  0.0287099599295975
+0.4795774089508519  0.0354810450730421
+0.5174551284302965  0.0436762400892676
+0.5574908933723948  0.0535662447634734
+0.5997794673389760  0.0654697097168021
+0.6444209773203629  0.0797615807222025
+0.6915214203333259  0.0968829639109244
+0.7411932257925751  0.1173528160657941
+0.7935558813657200  0.1417818319950386
+0.8487366312940483  0.1708889856143814
+0.9068712576789408  0.2055212874835526
+0.9681049570508522  0.2466774552165460
+1.0325933267228713  0.2955363623857367
+1.1005034780699026  0.3534913468026261
+1.1720152970766957  0.4221917343887950
+1.2473228764020485  0.5035932889946070
+1.3266361479907407  0.6000197567415060
+1.4101827511587894  0.7142382700467386
+1.4982101783799204  0.8495521583417510
+1.5909882501018255  1.0099157442965792
+1.6888119813342730  1.2000770760662189
+1.7920049171602441  1.4257563839197105
+1.9009230326408502  1.6938705324608958
+2.0159593160507465  2.0128171235105001
+2.1375491846790684  2.3928365600016956
+2.2661769218842553  2.8464768500799598
+2.4023833759344386  3.3891950162802051
+2.5467752299549580  4.0401418831828932
+2.7000362445396791  4.8231955846878352
+2.8629409996542536  5.7683361979838024
+3.0363718341331856  6.9134939370110056
+3.2213399198423351  8.3070634607183322
+3.4190117444670181  10.0113687095341906
+3.6307427597220272  12.1075056602154305
+3.8581206557875083  14.7022175149991767
+4.1030217688882811  17.9378258426842692
+4.3676857163412270  22.0068558119319597
+4.6548158191108762  27.1740462223277390
+4.9677168035367423  33.8102946552417052
+5.3104877311415617  42.4464913641684660
+5.6882990741244317  53.8616793032829619
+6.1078022224944073  69.2329155110445527
+6.5777554864842704  90.4014568635978009
+7.1100203574945802  120.3710602977196800
+7.7212265196916583  164.3024596690337660
+8.4357290551124144  231.6631212133333975
+9.2912862777876057  341.3777007119269911
+10.3511540777464699 535.9960169041145264
+11.7339153299960692 929.1843183030821365
+13.7057927912266031 1923.5968800075931995
+17.1162817741142561 6068.2143069486082823
+EOF
+
+ftest=${ffile%.f}
+ffile=${ftest}.f
+# if subroutine is new then existance, read and writability hasn't been tested
+if [ x$remove = xfalse ] ; then
+
+dftfiles="${DFTFILES:-dftfun.f dftuser.f base/src/dft/dftfun.f}"
+
+if ! test -f $ffile ; then
+  echo $0 requires $ffile to exist ;
+  exit
+fi
+
+if [ ! -r $ffile ]; then
+echo $ffile is not readable ;
+exit
+fi
+
+if [ ! -w $ffile ]; then
+echo Cannot write to $ffile ;
+exit
+fi
+
+fi
+# loop over .df files
+for i in $* ; do
+
+dftest=${i%.df}
+fnroot=$dftest
+df=${fnroot}.df
+FNROOT=`echo $fnroot | tr a-z A-Z`
+# test for repitition of key in dftfiles
+for i in $dftfiles ; do
+  if [ -r $i ]; then
+    if [ `grep -c \'$FNROOT\' $i` -gt 0 ]; then
+      echo Already have key $FNROOT in $i
+      exit
+    fi
+  fi
+done
+# strip out ;'s at ends of lines and replace with :'s to stop maple printing
+# everything that it is doing
+dftemp=${TMPDIR:-/tmp}/f$$
+sed -e 's/ *$//' -e 's/;$/:/' $df > $dftemp
+
+fn="dftacg_$fnroot"
+
+sums=0
+excess=false # defines presence of G
+# create a list of all of the defined quantities in fn.df - these will be counted by listcount
+list=`sed -e "s/^ *//" -e "/^[a-zA-Z0-9_,() ]*\[*[a-zA-Z0-9_,() ]*\]* *:=/p" -e "d" $dftemp | sed -e 's/ *:=.*$//'`
+# test for presence of f, g and G
+for i in $list ; do
+if [ x$i = xf ] ; then
+sums=$(($sums+1))
+fi
+if [ x$i = xg ] ; then 
+sums=$(($sums+1))
+fi
+if [ x$i = xG ] ; then 
+excess=true
+sums=$(($sums+1))
+fi
+done
+# if f, g or G are not given bomb
+if [ $sums = 0 ] ; then
+echo "No functional definition in $df"
+echo "Bombing"
+exit
+fi
+
+echo "ACG: $df -->  subroutine $fn in $ffile"
+# test if K depends on rho, sigma, tau or upsilon - igrad
+igshtmp=${TMPDIR:-/tmp}/i$$
+maple -q <<EOF > $igshtmp 2>&1
+# initializations
+f:=0:
+g:=0:
+G:=0:
+ig:=-1:
+functional:=0:
+excess:=$excess:
+# read in protected names and manipulated input file
+read("$dfpro");
+read("$dftemp");
+
+if excess then
+
+ functional:=subs(rho(s)=rhoa,rho(s_)=rhob,\
+	sigma(ss)=sigmaaa,sigma(s_s_)=sigmabb,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	chi(s)=sqrt(sigmaaa)/rhoa^(4/3),chi(s_)=sqrt(sigmabb)/rhob^(4/3),\
+	upsilon(s)=upsilona,upsilon(s_)=upsilonb,\
+	tau(s)=taua,tau(s_)=taub,g)\
+   +subs(rho(a)=rhoa,rho(b)=rhob,\
+	sigma(aa)=sigmaaa,sigma(bb)=sigmabb,sigma(ab)=sigmaab,sigma(ba)=sigmaab,\
+	chi(a)=sqrt(sigmaaa)/rhoa^(4/3),chi(b)=sqrt(sigmabb)/rhob^(4/3),\
+	upsilon(a)=upsilona,upsilon(b)=upsilonb,\
+	tau(a)=taua,tau(b)=taub,f)\
+   +subs(rho(s)=rhoa,\
+	sigma(ss)=sigmaaa,\
+	chi(s)=sqrt(sigmaaa)/rhoa^(4/3),\
+	upsilon(s)=upsilona,\
+	tau(s)=taua,G):
+else
+
+ functional:=subs(rho(s)=rhoa,rho(s_)=rhob,\
+	sigma(ss)=sigmaaa,sigma(s_s_)=sigmabb,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	chi(s)=sqrt(sigmaaa)/rhoa^(4/3),chi(s_)=sqrt(sigmabb)/rhob^(4/3),\
+	upsilon(s)=upsilona,upsilon(s_)=upsilonb,\
+	tau(s)=taua,tau(s_)=taub,g)\
+   +subs(rho(a)=rhoa,rho(b)=rhob,\
+	sigma(aa)=sigmaaa,sigma(bb)=sigmabb,sigma(ab)=sigmaab,sigma(ba)=sigmaab,\
+	chi(a)=sqrt(sigmaaa)/rhoa^(4/3),chi(b)=sqrt(sigmabb)/rhob^(4/3),\
+	upsilon(a)=upsilona,upsilon(b)=upsilonb,\
+	tau(a)=taua,tau(b)=taub,f):
+
+fi:
+
+rho_deriv     := depends(functional,{rhoa,rhob,rho}):
+sigma_deriv   := depends(functional,{sigmaaa,sigmabb,sigmaab,sigma}):
+upsilon_deriv := depends(functional,{upsilona,upsilonb,upsilon}):
+tau_deriv     := depends(functional,{taua,taub,tau}):
+
+if rho_deriv then ig:=0 fi:
+if sigma_deriv then ig:=1 fi:
+if tau_deriv or upsilon_deriv then ig:=2 fi:
+
+printf("%d\n",ig);
+printf("rho_deriv=%s\n",rho_deriv);
+printf("sigma_deriv=%s\n",sigma_deriv);
+printf("upsilon_deriv=%s\n",upsilon_deriv);
+printf("tau_deriv=%s\n",tau_deriv);
+quit
+EOF
+
+igsh=`head -1 $igshtmp`
+# if igrad doesn't equal -1, 0, 1 or 2 then maple has gone wrong
+if test x"$igsh" != x"-1" -a x"$igsh" != x"0" -a x"$igsh" != x"1" -a x"$igsh" != x"2" ; then
+echo Error in maple evaluating igrad
+# print to screen the maple output
+cat $igshtmp
+echo Bombing
+rm -f $igshtmp
+exit
+fi
+
+eval `grep rho_deriv $igshtmp` 
+eval `grep sigma_deriv $igshtmp` 
+eval `grep tau_deriv $igshtmp` 
+eval `grep upsilon_deriv $igshtmp` 
+
+rm -f $igshtmp
+# if igrad equals original value (-1 ) functional has no dependence on rho, sigma, upsilon or tau - bomb
+if test $igsh -eq -1 ; then
+    echo "Functional must depend on rho, sigma, tau or upsilon"
+    echo "Bombing"
+    exit
+fi
+# start of subroutine
+dftempfile1=${TMPDIR:-/tmp}/d$$
+dftempfile2=${TMPDIR:-/tmp}/e$$
+cp $ffile $dftempfile1
+sed 's/c\:dfauto */c\:'$FNROOT'callstart\
+        else if (key.eq.'\'$FNROOT\'') then\
+        call dftacg_'$fnroot'(name,fderiv,open,igrad,npt,rhoc,rhoo,\
+     >                   sigmacc,sigmaco,sigmaoo,tauc,tauo,\
+     >                   upsilonc,upsilono,\
+     >                   zk,vrhoc,vrhoo,\
+     >                   vsigmacc,vsigmaco,vsigmaoo,vtauc,vtauo,\
+     >                   vupsilonc,vupsilono)\
+c\:'$FNROOT'callend\
+c\:dfauto/
+' $dftempfile1 > $dftempfile2
+rm -f $dftempfile1
+
+cat >> $dftempfile2 << FORTRAN_ENDS
+c:${FNROOT}subrstart
+
+c    Generated: `date`
+
+      subroutine dftacg_$fnroot
+     > (name,fderiv,open,igrad,npt,rhoc,rhoo,
+     >                   sigmacc,sigmaco,sigmaoo,
+     >                   tauc,tauo,upsilonc,upsilono,
+     >                   zk,vrhoc,vrhoo,
+     >                   vsigmacc,vsigmaco,vsigmaoo,
+     >                   vtauc,vtauo,vupsilonc,vupsilono)
+      implicit double precision (a-h,o-z)
+      logical fderiv,open
+      integer igrad,npt
+      character*(*) name
+      double precision rhoc(*),rhoo(*)
+      double precision sigmacc(*),sigmaco(*),sigmaoo(*)
+      double precision tauc(*),tauo(*)
+      double precision upsilonc(*),upsilono(*)
+      double precision zk(*),vrhoc(*),vrhoo(*)
+      double precision vsigmacc(*),vsigmaco(*),vsigmaoo(*)
+      double precision vtauc(*),vtauo(*)
+      double precision vupsilonc(*),vupsilono(*)
+      include "common/cdft"
+      include "common/tapes"
+      parameter(tol=1d-12)
+      name='Automatically generated $FNROOT'
+      igrad=$igsh
+FORTRAN_ENDS
+
+
+maple -q <<MAPLE_END
+
+Digits:=21:
+# initializations
+f:=0:
+g:=0:
+G:=0:
+functional:=0:
+# functional is f + sum_s g
+functionalalpha:=0:
+# functionalalpha is G evaluated for alpha only spin
+functionalbeta:=0:
+# functionalbeta is G evaluated for beta only spin
+# read in protected names and manipulated input file
+read("$dfpro");
+read("$dftemp");
+# define procedure Fortran
+Fortran:=proc(a)
+  fortran(evalf(a),precision=double,filename="$dftempfile2",optimized,mode=double);
+end:
+# define procedure Text
+Text:=proc(str)
+  local fd:
+  fd:=fopen("$dftempfile2",APPEND):
+  fprintf(fd,"       %s\n",str);
+  fclose(fd):
+end:
+# define procedure EvalList
+EvalList:=proc(fderiv,open_shell)
+  local elist,elista,elistb,elistc,rholist,excess,\
+        rho_deriv,sigma_deriv,upsilon_deriv,tau_deriv,\
+        rhoa1,rhob1,sigmaaa1,sigmabb1,\
+	taua1,taub1,rhoc1,sigmacc1,tauc1,\
+        functional,functionalalpha,functionalbeta:
+# initialize lists to contain nothing
+  elist:=[]:
+# elist contains information for f + sum_s g for open-shell
+  elista:=[]:
+# elista contains information for G alpha spin only open-shell
+  elistb:=[]:
+# elistb contains information for G beta spin only open-shell
+  elistc:=[]:
+# elistc contains information for sum_s G for closed-shell
+  rholist:=[]:
+# rholist contains information for rho for open-shell
+# set logicals in maple
+  rho_deriv     := $rho_deriv:
+  sigma_deriv   := $sigma_deriv:
+  upsilon_deriv := $upsilon_deriv:
+  tau_deriv     := $tau_deriv:
+  excess        := $excess:
+
+if open_shell then
+
+	rhoa1:=(rhoc[i]+rhoo[i])/2:
+	rhob1:=(rhoc[i]-rhoo[i])/2:
+# always need to evaluate rhoa and rhob for open-shell (rholist)	
+	rholist:=[op(rholist),rhoa=max(0,rhoa1)]:
+	rholist:=[op(rholist),rhob=max(0,rhob1)]:
+	elist:=[op(elist),rho=rhoa+rhob]:
+	elista:=[op(elista),rho=rhoa]:
+	elistb:=[op(elistb),rho=rhob]:
+
+	if sigma_deriv then
+
+	sigmaaa1:=(sigmacc[i] + sigmaoo[i] + 2*sigmaco[i])/4:
+	sigmabb1:=(sigmacc[i] + sigmaoo[i] - 2*sigmaco[i])/4:
+	elist:=[op(elist),sigmaaa=max(sigmaaa1,0)]:
+	elist:=[op(elist),sigmaab=(sigmacc[i] - sigmaoo[i])/4]:
+	elist:=[op(elist),sigmabb=max(sigmabb1,0)]:
+	elist:=[op(elist),sigma=sigmaaa + sigmabb + 2*sigmaab]:
+
+	if excess then
+
+	elista:=[op(elista),sigmaaa=max(sigmaaa1,0)]:
+	elista:=[op(elista),sigma=sigmaaa]:
+
+	elistb:=[op(elistb),sigmabb=max(sigmabb1,0)]:
+	elistb:=[op(elistb),sigma=sigmabb]:
+
+	fi:
+
+	fi:
+
+	if upsilon_deriv then
+
+	elist:=[op(elist),upsilona=(upsilonc[i] + upsilono[i])/2]:
+	elist:=[op(elist),upsilonb=(upsilonc[i] - upsilono[i])/2]:
+	elist:=[op(elist),upsilon=upsilona+upsilonb]:
+
+	if excess then
+
+	elista:=[op(elista),upsilona=(upsilonc[i] + upsilono[i])/2]:
+	elista:=[op(elista),upsilon=upsilona]:
+
+
+	elistb:=[op(elistb),upsilonb=(upsilonc[i] - upsilono[i])/2]:
+	elistb:=[op(elistb),upsilon=upsilonb]:
+
+	fi:
+
+	fi:
+
+	if tau_deriv then
+ 	taua1:=(tauc[i] + tauo[i])/2:
+	taub1:=(tauc[i] - tauo[i])/2:
+	elist:=[op(elist),taua=max(taua1,0)]:
+	elist:=[op(elist),taub=max(taub1,0)]:
+	elist:=[op(elist),tau=taua+taub]:
+
+	if excess then
+
+	elista:=[op(elista),taua=max(taua1,0)]:
+	elista:=[op(elista),tau=taua]:
+
+	elistb:=[op(elistb),taub=max(taub1,0)]:
+	elistb:=[op(elistb),tau=taub]:
+
+	fi:
+
+	fi:
+
+	functional:=subs(rho(s)=rhoa,rho(s_)=rhob,\
+	    sigma(ss)=sigmaaa,sigma(s_s_)=sigmabb,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	    chi(s)=sigmaaa^(1/2)*rhoa^(-4/3),chi(s_)=sigmabb^(1/2)*rhob^(-4/3),\
+	    upsilon(s)=upsilona,upsilon(s_)=upsilonb,\
+	    tau(s)=taua,tau(s_)=taub,g)\
+          +subs(rho(s)=rhob,rho(s_)=rhoa,\
+	    sigma(ss)=sigmabb,sigma(s_s_)=sigmaaa,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	    chi(s)=sigmabb^(1/2)*rhob^(-4/3),chi(s_)=sigmaaa^(1/2)*rhoa^(-4/3),\
+	    upsilon(s)=upsilonb,upsilon(s_)=upsilona,\
+	    tau(s)=taub,tau(s_)=taua,g)\
+          +subs(rho(a)=rhoa,rho(b)=rhob,\
+	    sigma(aa)=sigmaaa,sigma(bb)=sigmabb,sigma(ab)=sigmaab,sigma(ba)=sigmaab,\
+	    chi(a)=sqrt(sigmaaa)/rhoa^(4/3),chi(b)=sqrt(sigmabb)/rhob^(4/3),\
+	    upsilon(a)=upsilona,upsilon(b)=upsilonb,\
+	    tau(a)=taua,tau(b)=taub,f);
+
+	elist:=[op(elist), zk[i]=functional];
+
+	if excess then
+
+	functionalalpha:=subs(rho(s)=rhoa,sigma(ss)=sigmaaa,chi(s)=sqrt(sigmaaa)/rhoa^(4/3),\
+            upsilon(s)=upsilona,tau(s)=taua,G);
+
+	elista:=[op(elista), zk[i]=functionalalpha];
+
+	functionalbeta:=subs(rho(s)=rhob,sigma(ss)=sigmabb,chi(s)=sqrt(sigmabb)/rhob^(4/3),\
+            upsilon(s)=upsilonb,tau(s)=taub,G);
+
+	elistb:=[op(elistb), zk[i]=functionalbeta];
+
+	fi:
+
+	if fderiv then
+
+	    if rho_deriv then
+
+	    elist := [op(elist), vrhoc[i] = vrhoc[i] +\
+                 1/2*diff(functional,rhoa) + 1/2*diff(functional,rhob) + diff(functional,rho)]:
+	    elist := [op(elist), vrhoo[i] = vrhoo[i] +\
+                 1/2*diff(functional,rhoa) - 1/2*diff(functional,rhob)]:
+
+		 if excess then
+
+	    elista := [op(elista), vrhoc[i] = vrhoc[i] +\
+                 1/2*diff(functionalalpha,rhoa) + diff(functionalalpha,rho)]:
+	    elista := [op(elista), vrhoo[i] = vrhoo[i] +\
+                 1/2*diff(functionalalpha,rhoa)]:
+
+	    elistb := [op(elistb), vrhoc[i] = vrhoc[i]\
+                 + 1/2*diff(functionalbeta,rhob) + diff(functionalbeta,rho)]:
+	    elistb := [op(elistb), vrhoo[i] = vrhoo[i]\
+                 - 1/2*diff(functionalbeta,rhob)]:
+
+		 fi:
+	    fi:
+
+	    if sigma_deriv then
+
+	    elist := [op(elist), vsigmacc[i] = vsigmacc[i] + \
+                 0.25*(diff(functional,sigmaaa) + diff(functional,sigmabb) + diff(functional,sigmaab)) + diff(functional,sigma)]:
+	    elist := [op(elist), vsigmaco[i] = vsigmaco[i] + \
+                 0.5*(diff(functional,sigmaaa) - diff(functional,sigmabb))]:
+	    elist := [op(elist), vsigmaoo[i] = vsigmaoo[i] + \
+                 0.25*(diff(functional,sigmaaa) + diff(functional,sigmabb) - diff(functional,sigmaab))]:
+
+		if excess then
+
+	    elista := [op(elista), vsigmacc[i] = vsigmacc[i] + \
+                 0.25*diff(functionalalpha,sigmaaa) + diff(functionalalpha,sigma)]:
+	    elista := [op(elista), vsigmaco[i] = vsigmaco[i] + \
+                 0.5*diff(functionalalpha,sigmaaa)]:
+	    elista := [op(elista), vsigmaoo[i] = vsigmaoo[i] + \
+                 0.25*diff(functionalalpha,sigmaaa)]:
+
+	    elistb := [op(elistb), vsigmacc[i] = vsigmacc[i] + \
+                 0.25*diff(functionalbeta,sigmabb) + diff(functionalbeta,sigma)]:
+	    elistb := [op(elistb), vsigmaco[i] = vsigmaco[i]  \
+                 -0.5*diff(functionalbeta,sigmabb)]:
+	    elistb := [op(elistb), vsigmaoo[i] = vsigmaoo[i] + \
+                 0.25*diff(functionalbeta,sigmabb)]:
+
+		 fi:
+	    fi:
+
+	    if upsilon_deriv then
+	    elist := [op(elist), vupsilonc[i] = vupsilonc[i] + \
+		    1/2*diff(functional,upsilona) + 1/2*diff(functional,upsilonb) + diff(functional,upsilon)]:
+	    elist := [op(elist), vupsilono[i] = vupsilono[i] + \
+		    1/2*diff(functional,upsilona) - 1/2*diff(functional,upsilonb)]:
+
+		if excess then
+
+	    elista := [op(elista), vupsilonc[i] = vupsilonc[i] + \
+		    1/2*diff(functionalalpha,upsilona) + diff(functionalalpha,upsilon)]:
+	    elista := [op(elista), vupsilono[i] = vupsilono[i] + \
+		    1/2*diff(functionalalpha,upsilona)]:
+
+	    elistb := [op(elistb), vupsilonc[i] = vupsilonc[i] + \
+		    1/2*diff(functionalbeta,upsilonb) + diff(functionalbeta,upsilon)]:
+	    elistb := [op(elistb), vupsilono[i] = vupsilono[i]  \
+		    -1/2*diff(functionalbeta,upsilonb)]:
+
+		    fi:
+	    fi:
+
+	    if tau_deriv then
+	    elist := [op(elist), vtauc[i] = vtauc[i] + \
+		    1/2*diff(functional,taua) + 1/2*diff(functional,taub) + diff(functional,tau)]:
+	    elist := [op(elist), vtauo[i] = vtauo[i] + \
+		    1/2*diff(functional,taua) - 1/2*diff(functional,taub)]:
+
+		if excess then
+
+	    elista := [op(elista), vtauc[i] = vtauc[i] + \
+		    1/2*diff(functionalalpha,taua) + diff(functionalalpha,tau)]:
+	    elista := [op(elista), vtauo[i] = vtauo[i] + \
+		    1/2*diff(functionalalpha,taua)]:
+
+	    elistb := [op(elistb), vtauc[i] = vtauc[i] + \
+		    1/2*diff(functionalbeta,taub) + diff(functionalbeta,tau)]:
+	    elistb := [op(elistb), vtauo[i] = vtauo[i]  \
+		    -1/2*diff(functionalbeta,taub)]:
+		    fi:
+	    fi:
+	fi: # derivatives
+
+else #closed shell
+
+	if rho_deriv then
+	    rhoc1:=rhoc[i]/2:
+	    elistc:=[op(elistc),rhoa=max(rhoc1,0)]:
+	    elistc:=[op(elistc),rhob=max(rhoc1,0)]:
+	    elistc:=[op(elistc),rho=rhoa + rhob]:
+	fi:
+	
+	if sigma_deriv then
+	    sigmacc1:=sigmacc[i]/4:
+	    elistc:=[op(elistc),sigmaaa=max(sigmacc1,0)]:
+	    elistc:=[op(elistc),sigmaab=max(sigmacc1,0)]:
+	    elistc:=[op(elistc),sigmabb=max(sigmacc1,0)]:
+	    elistc:=[op(elistc),sigma=sigmaaa + sigmabb + 2*sigmaab]:
+	fi:
+
+	if upsilon_deriv then
+	elistc:=[op(elistc),upsilona=upsilonc[i]/2]:
+	elistc:=[op(elistc),upsilonb=upsilonc[i]/2]:
+	elistc:=[op(elistc),upsilon=upsilona+upsilonb]:
+	fi:
+
+	if tau_deriv then
+	tauc1:=tauc[i]/2:
+	elistc:=[op(elistc),taua=max(tauc1,0)]:
+	elistc:=[op(elistc),taub=max(tauc1,0)]:
+	elistc:=[op(elistc),tau=taua+taub]:
+	fi:
+
+	functional:=subs(rho(s)=rhoa,rho(s_)=rhob,\
+	    sigma(ss)=sigmaaa,sigma(s_s_)=sigmabb,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	    chi(s)=sigmaaa^(1/2)*rhoa^(-4/3),chi(s_)=sigmabb^(1/2)*rhob^(-4/3),\
+	    upsilon(s)=upsilona,upsilon(s_)=upsilonb,\
+	    tau(s)=taua,tau(s_)=taub,g)\
+          +subs(rho(s)=rhob,rho(s_)=rhoa,\
+	    sigma(ss)=sigmabb,sigma(s_s_)=sigmaaa,sigma(ss_)=sigmaab,sigma(s_s)=sigmaab,\
+	    chi(s)=sigmabb^(1/2)*rhob^(-4/3),chi(s_)=sigmaaa^(1/2)*rhoa^(-4/3),\
+	    upsilon(s)=upsilonb,upsilon(s_)=upsilona,\
+	    tau(s)=taub,tau(s_)=taua,g)\
+          +subs(rho(a)=rhoa,rho(b)=rhob,\
+	    sigma(aa)=sigmaaa,sigma(bb)=sigmabb,sigma(ab)=sigmaab,sigma(ba)=sigmaab,\
+	    chi(a)=sqrt(sigmaaa)/rhoa^(4/3),chi(b)=sqrt(sigmabb)/rhob^(4/3),\
+	    upsilon(a)=upsilona,upsilon(b)=upsilonb,\
+	    tau(a)=taua,tau(b)=taub,f);
+
+	elistc:=[op(elistc), zk[i]=functional];
+
+	if fderiv then
+
+	    if rho_deriv then
+	    elistc := [op(elistc), vrhoc[i] = vrhoc[i] + \
+		    0.5*diff(functional,rhoa) + 0.5*diff(functional,rhob) + diff(functional,rho)]:
+	    fi:
+
+	    if sigma_deriv then
+		elistc := [op(elistc), vsigmacc[i] = vsigmacc[i] + \
+		    0.25*diff(functional,sigmaaa) + 0.25*diff(functional,sigmabb) + 0.25*diff(functional,sigmaab) + diff(functional,sigma)]:
+	    fi:
+	    if upsilon_deriv then
+		elistc := [op(elistc), vupsilonc[i] = vupsilonc[i] + \
+			1/2*diff(functional,upsilona) + 1/2*diff(functional,upsilonb) + diff(functional,upsilon)]:
+	    fi:
+
+	    if tau_deriv then
+		elistc := [op(elistc), vtauc[i] = vtauc[i] + \
+		    1/2*diff(functional,taua) + 1/2*diff(functional,taub) + diff(functional,tau)]:
+	    fi:
+
+	fi: #derivatives
+fi: # open-/closed-shell
+
+# form loops of subroutine
+
+  Text("    do i=1,npt"):
+  Text("      zk(i)=0.0d0"):
+  Text("      if(rhoc(i).gt.tol) then"):
+
+if open_shell then
+    if excess then
+    Fortran(rholist):
+  Text("        if(rhoa.lt.tol) then"):
+    Fortran(elistb):
+  Text("        elseif(rhob.lt.tol) then"):
+    Fortran(elista):
+  Text("        else"):
+    Fortran(elist):
+  Text("        endif"):
+    else
+	if rho_deriv then
+    Fortran(rholist):
+	fi:
+    Fortran(elist):
+    fi:
+else
+    Fortran(elistc):
+
+fi:
+
+  Text("      endif"):
+  Text("    enddo"):
+
+end: # end of definition of EvalList
+# create mask of subroutine
+  Text("if(open) then"):
+  Text("  if(fderiv) then"):
+    EvalList(true,true):
+  Text("  else"):
+    EvalList(false,true):
+  Text("  endif"):
+  Text("else"):
+  Text("  if(fderiv) then"):
+    EvalList(true,false):
+  Text("  else"):
+    EvalList(false,false):
+  Text("  endif"):
+  Text("endif"):
+
+MAPLE_END
+# return and end statements for subroutine
+cat >> $dftempfile2 <<FORTRAN_END
+
+      return
+      end
+
+c:${FNROOT}subrend
+FORTRAN_END
+# if the word Error occurs in the maple output - stop something has gone wrong
+if grep Error $dftempfile2 > /dev/null 2>/dev/null ; then
+echo "Error detected"
+echo "Bombing"
+rm -f $dftempfile2
+exit
+else
+# append created subroutine to ffile
+mv $dftempfile2 $ffile
+fi
+
+echo "Testing for singularities"
+#make new directory that testing will be performed in
+mkdir testing$$
+cd testing$$
+# fortran program to test for the presence of singularities as rho_s -> 0
+cat <<EOF > htest.f
+
+      program htest
+      
+      implicit double precision (a-h,o-z)
+      logical fderiv,open
+      parameter (maxn=500)
+c maximum number of entries in an array = maxn. number of grid points allowed
+      character*32 name
+      dimension q(1),v(1),rhoct(1),rhoot(1)
+      dimension sigmacct(1),sigmacot(1),sigmaoot(1)
+      dimension tauct(1),tauot(1)
+      dimension upsilonct(1),upsilonot(1)
+      dimension r(maxn-1),w(maxn-1),rhoc(maxn-1),rhoo(maxn-1)
+      dimension sigmacc(maxn-1),sigmaco(maxn-1),sigmaoo(maxn-1)
+      dimension tauc(maxn-1),tauo(maxn-1)
+      dimension upsilonc(maxn-1),upsilono(maxn-1)
+      dimension zk(maxn-1),vrhoc(1),vrhoo(1)
+      dimension vsigmacc(1),vsigmaco(1),vsigmaoo(1)
+      dimension vtauc(1),vtauo(1)
+      dimension vupsilonc(1),vupsilono(1)
+
+      pi=acos(-1d0)
+
+      open(1,file="$gridw",status='old')
+c read in number of grid points and test to see if it exceeds maximum
+      read(1,*) n
+      if(n.gt.maxn) then
+      write(6,*) 'number of grid points exceeds maximum'
+      write(6,*) 'bombing htest'
+      stop
+      endif
+
+c only do derivatives for one point
+      open=.true.
+c initializations
+      f=0d0
+      vr=0d0
+      vs=0d0
+      vu=0d0
+      vt=0d0
+c read grid point and weight
+      read(1,*) q(1),v(1)
+c calculate values of variables from grid point (rho = exp(-2*(grid point))/pi)
+      v(1)=3*v(1)
+      rhoct(1)=exp(-2*q(1))/pi
+      rhoot(1)=rhoct(1)
+
+      sigmacct(1)=4*rhoct(1)**2
+      sigmacot(1)=sigmacct(1)
+      sigmaoot(1)=sigmacct(1)
+
+      tauct(1)=rhoct(1)
+      tauot(1)=rhoct(1)
+
+      upsilonct(1)=4*rhoct(1)*(1-1/q(1))
+      upsilonot(1)=upsilonct(1)
+c initializations
+      zk(1)=0d0
+
+      vrhoc(1)=0d0
+      vrhoo(1)=0d0
+
+      vsigmacc(1)=0d0
+      vsigmaco(1)=0d0
+      vsigmaoo(1)=0d0
+
+      vupsilonc(1)=0d0
+      vupsilono(1)=0d0
+
+      vtauc(1)=0d0
+      vtauo(1)=0d0
+c number of grid points supplied to dftacg_$fnroot
+      npt=1
+      fderiv=.true.
+
+        call dftacg_$fnroot
+     >   (name,fderiv,open,igrad,npt,rhoct,rhoot,
+     >                   sigmacct,sigmacot,sigmaoot,
+     >                   tauct,tauot,upsilonct,upsilonot,
+     >                   zk,vrhoc,vrhoo,
+     >                   vsigmacc,vsigmaco,vsigmaoo,
+     >                   vtauc,vtauo,vupsilonc,vupsilono)
+
+      f=f+v(1)*zk(1)
+      vr=vr+vrhoc(1)+vrhoo(1)
+      vs=vs+vsigmacc(1)+vsigmaco(1)+vsigmaoo(1)
+      vu=vu+vupsilonc(1)+vupsilono(1)
+      vt=vt+vtauc(1)+vtauo(1)
+c if x.ne.x then it is either infinity or nan - this implies singulauities
+      if(f.ne.f.or.vr.ne.vr.or.vs.ne.vs.or.vu.ne.vu.or.vt.ne.vt) then
+	write(6,*)'Singularities found'
+        write(6,*)'Need to specify G in $df'
+      else
+c don't do derivatives for the rest of the grid points
+c all v arrays are ignored
+      fderiv=.false.
+
+      npt=n-1
+
+      do i=1,npt
+c read grid points and weights
+        read(1,*) r(i),w(i)
+c calculate values of variables from grid point (rho = exp(-2*(grid point))/pi)	
+	w(i)=3*w(i)
+
+        rhoc(i)=exp(-2*r(i))/pi
+        rhoo(i)=rhoc(i)
+
+	sigmacc(i)=4*rhoc(i)**2
+	sigmaco(i)=sigmacc(i)
+	sigmaoo(i)=sigmacc(i)
+
+	tauc(i)=rhoc(i)
+	tauo(i)=rhoc(i)
+
+	upsilonc(i)=rhoc(i)*(1-1/r(i))
+	upsilono(i)=upsilonc(i)
+c re-initialize array zk
+	zk(i)=0d0
+
+      enddo
+
+        call dftacg_$fnroot
+     >   (name,fderiv,open,igrad,npt,rhoc,rhoo,
+     >                   sigmacc,sigmaco,sigmaoo,
+     >                   tauc,tauo,upsilonc,upsilono,
+     >                   zk,vrhoc,vrhoo,
+     >                   vsigmacc,vsigmaco,vsigmaoo,
+     >                   vtauc,vtauo,vupsilonc,vupsilono)
+c calculate value of functional on grid on print to screen      
+	do j=1,npt
+	    f=f+w(j)*zk(j)
+	enddo
+	write(6,*)'No singularities found in $FNROOT'
+	write(6,3)'Functional value for the Hydrogen atom =',f,'au'
+3       format(a41,1x,f9.6,1x,a2) 
+      endif
+
+      close(1)
+
+      end
+c getvar is called by dftfun and dftuser to return nv - if nv doesn't
+c exist dftfun and dftuser won't compile
+c nv does not affect anything that dfauto does
+      subroutine getvar(name,power,test,ity,nv,idum,jdum)
+      implicit double precision (a-h,o-z)
+      character *(*) name, test
+      nv=0
+      end
+
+EOF
+# dftfun and dftuser include two files : common/tapes and common/cdft
+# the directory common needs to be removed if it exists and remade
+rm -rf common
+mkdir common
+# dftfun and dftuser look in common/tapes for where to send output
+# iout=6 will send it to unit 6
+echo "      parameter (iout=6)" > common/tapes
+# common/cdft needs to be touched in order for it to be complied
+touch common/cdft
+# make a local copy of ffile
+cp ../$ffile .
+
+# make local copies of MFILES
+for i in $MFILES ; do
+cp $i .
+done
+
+# make and run htest
+# default compiler is f77
+# compile all .f files in testing$$
+${FC:-f77} ./*.f -o htest && ./htest
+# change back to original working directory
+cd -
+#remove testing directory (recursive)
+rm -rf testing$$
+
+rm -f $dftemp
+
+done # .df files
+
+rm -f $gridw
+
+fi
+
+rm -f $dfpro
