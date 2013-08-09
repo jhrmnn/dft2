@@ -1,5 +1,6 @@
 #include <cmath>
 #include <iostream>
+#include <vector>
 #include <ctime>
 #include <libint2.h>
 #include <boys.h>
