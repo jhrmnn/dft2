@@ -1,6 +1,8 @@
 *.swp
 *.mexmaci64
 *.mod
+*.tex
+*.pdf
 data/
 fmm/
 helix/
