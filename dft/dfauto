@@ -499,6 +499,7 @@ l=`cat $expressfile | sed -e '/proc/!d' -e 's/proc//' $expressfile`
 m=$i$l
 
 n=`cat $expressfile | sed -e '/proc/d' -e '/end:/d' -e '/:=/d'`
+n=${n%:}
 
 cat >> $tfile <<EOF
 \begin{dmath*}
