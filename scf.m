@@ -1,10 +1,5 @@
-function E = scf(S, H, eri, N, func, grid, basis)
-    if nargin == 7
-        dft = true;
-    else
-        eri = eri-1/2*permute(eri, [1 4 3 2]);
-        dft = false;
-    end
+function E = scf(S, H, eri, N, funcs, grid, basis)
+    xc_funcs = rmfield(funcs, 'HF');
 	X = ortho(S);
     diis_data = [];
     F = H;
@@ -13,18 +8,23 @@ function E = scf(S, H, eri, N, func, grid, basis)
         if i > 1 && norm(P-P_old) < 1e-8
             break
         end
-        F = H+tprod(eri, [1 2 -1 -2], P, [-1 -2]);
-        if dft
-            [Exc, Fxc] = eval_xc(P, upper(func), grid, basis);
+        J = tprod(eri, [1 2 -1 -2], P, [-1 -2]);
+        F = H+J;
+        if funcs.HF > 0
+            K = -1/2*tprod(eri, [1 -1 2 -2], P, [-1 -2]);
+            F = F+funcs.HF*K;
+        end
+        if ~isempty(fieldnames(xc_funcs))
+            [Exc, Fxc] = eval_xc(P, xc_funcs, grid, basis);
             F = F+Fxc;
         end
         [F, diis_data] = diis(diis_data, P, S, X, F);
         P_old = P;
     end
-    if dft
-        E = 1/2*tprod(P, [-1 -2], H+F-Fxc, [-1 -2])+Exc;
-    else
+    if isempty(fieldnames(xc_funcs))
         E = 1/2*tprod(P, [-1 -2], H+F, [-1 -2]);
+    else
+        E = 1/2*tprod(P, [-1 -2], H+F-Fxc, [-1 -2])+sum(Exc);
     end
 end
 

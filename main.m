@@ -1,22 +1,21 @@
-function main(xyzfile, basisfile, func)
-	atoms = read_xyz(xyzfile);
-	N = sum([atoms.Z]);
+function main(xyzfile, basisfile, funcs)
+    if ~isfield(funcs, 'HF')
+        funcs.HF = 0;
+    end
+    atoms = read_xyz(xyzfile);
+    N = sum([atoms.Z]);
     assert(mod(N, 2) == 0);
-	basisdef = read_basis(basisfile);
+    basisdef = read_basis(basisfile);
     basis = build_basis(basisdef, atoms);
+    assert(~isempty(basis));
     [S, H, basis] = calc1ints(basis, atoms); % also normalizes contractions
-    if strcmpi(func, 'hf')
-        dft = false;
+    if length(fieldnames(funcs)) > 1 % if any xc functional
+        grid = build_grid(atoms, 50, 300);
     else
-        grid = build_grid(atoms, 50, 302);
-        dft = true;
+        grid = [];
     end
     eri = calc2ints(basis);
-    if dft
-        E = scf(S, H, eri, N, func, grid, basis);
-    else
-        E = scf(S, H, eri, N);
-    end
-    E = E+nuclear(atoms);
+    E_el = scf(S, H, eri, N, funcs, grid, basis);
+    E = E_el+nuclear(atoms);
     fprintf('Energy: %.15f\n', E);
 end
