@@ -12,7 +12,9 @@ eval_xc.mex% : xc_func.f eval_xc.f90
 	mex LD=g++ FC=/usr/local/bin/gfortran FFLAGS=-cpp -I../ints -output eval_xc xc_func.f eval_xc.f90 
 
 clean : 
+	cp funcs/*.df .
 	FC=gfortran TMPDIR= sh dfauto -r -o xc_func.f *.df
+	rm *.df
 
 rebuild :
 	touch dfauto
