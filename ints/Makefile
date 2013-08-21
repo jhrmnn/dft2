@@ -13,3 +13,8 @@ rebuild :
 	touch calc1ints.f90 calc2ints.cc
 	make
 
+clean :
+	-rm calc1ints.$(MEXEXT)
+	-rm calc2ints.$(MEXEXT)
+	-rm types.mod
+

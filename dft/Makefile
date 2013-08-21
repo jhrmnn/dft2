@@ -17,7 +17,10 @@ eval_xc.$(MEXEXT) : xc_func.f eval_xc.f90
 clean : 
 	cp funcs/*.df .
 	FC=$(FC) TMPDIR= sh dfauto -r -o xc_func.f *.df
-	rm *.df
+	-rm *.df
+	-rm funcs/*.tex
+	-rm eval_xc.$(MEXEXT)
+	-rm funcs.pdf
 
 rebuild :
 	touch dfauto
