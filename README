@@ -1,0 +1,4 @@
+program for doing Hartree-Fock and DFT calculations
+
+for installation, run make
+for unpacking libraries without installation, run make unpack

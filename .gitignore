@@ -6,8 +6,7 @@
 data/
 fmm/
 helix/
-obsolete/
 ints/gen1int/
-ints/libint-2.0.3-stable/
+ints/libint/
 misc/tprod/
 getLebedevSphere.m
