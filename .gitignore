@@ -4,9 +4,9 @@
 *.tex
 *.pdf
 data/
+dft/getLebedevSphere.m
 fmm/
 helix/
 ints/gen1int/
 ints/libint/
 misc/tprod/
-getLebedevSphere.m
