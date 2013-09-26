@@ -5,7 +5,7 @@ function E = scf(S, H, eri, N, funcs, grid, basis)
     F = H;
     for i = 1:60
         P = solve_fock(F, X, N);
-        if i > 1 && norm(P-P_old) < 1e-8
+        if i > 1 && norm(P-P_old) < 1e-6
             break
         end
         J = tprod(eri, [1 2 -1 -2], P, [-1 -2]);
