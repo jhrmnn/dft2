@@ -43,7 +43,7 @@ void prepare_pair(Pair_data_t &pair,
 void prepare_ssss(Ssss_data_t &out,
                   Pair_data_t &pair_ab, Pair_data_t &pair_cd);
 
-void prepare_erival(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
+void prepare_erival(Libint_eri_t &erieval, FmEval_Chebyshev3<double> &fmeval, int max_m,
                     double *F, Ssss_data_t &ssss,
                     Pair_data_t &ab, Pair_data_t &cd);
 
@@ -73,7 +73,7 @@ void calc2ints(double *eris, int nbasis, vector<Basis_func_t> &basis)
     vector<Libint_eri_t> erieval(max_contr4);
     libint2_init_eri(&erieval[0], max_l, 0);
     int max_m = 4*max_l;
-    FmEval_Chebyshev3 fmeval(max_m);
+    FmEval_Chebyshev3<double> fmeval(max_m);
 
     vector<Pair_data_t> pairs(nprims*nprims);
     for (int s0 = 0; s0 < nshell; s0++) {
@@ -196,7 +196,7 @@ void prepare_ssss(Ssss_data_t &out,
     out.prefactor = twopi25*ab.K*cd.K/sqrt(out.zetapeta)*ab.cacb*cd.cacb;
 }
 
-void prepare_erival(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
+void prepare_erival(Libint_eri_t &erieval, FmEval_Chebyshev3<double> &fmeval, int max_m,
                     double *F, Ssss_data_t &ssss,
                     Pair_data_t &ab, Pair_data_t &cd)
 {
@@ -204,10 +204,6 @@ void prepare_erival(Libint_eri_t &erieval, FmEval_Chebyshev3 &fmeval, int max_m,
     fmeval.eval(F, ssss.rho*ssss.PQ2, max_m);
     switch (max_m)
     {
-        case 20: erieval.LIBINT_T_SS_EREP_SS(20)[0] = ssss.prefactor*F[20];
-        case 19: erieval.LIBINT_T_SS_EREP_SS(19)[0] = ssss.prefactor*F[19];
-        case 18: erieval.LIBINT_T_SS_EREP_SS(18)[0] = ssss.prefactor*F[18];
-        case 17: erieval.LIBINT_T_SS_EREP_SS(17)[0] = ssss.prefactor*F[17];
         case 16: erieval.LIBINT_T_SS_EREP_SS(16)[0] = ssss.prefactor*F[16];
         case 15: erieval.LIBINT_T_SS_EREP_SS(15)[0] = ssss.prefactor*F[15];
         case 14: erieval.LIBINT_T_SS_EREP_SS(14)[0] = ssss.prefactor*F[14];
