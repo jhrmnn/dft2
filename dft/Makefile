@@ -1,27 +1,38 @@
-MEXEXT:=`mexext`
-FC:=/usr/local/bin/gfortran
+mexext := $(shell mexext)
 
-all : eval_xc.$(MEXEXT)
+all: eval_xc.${mexext} getLebedevSphere.m
 
-xc_func.f : dfauto funcs/*.df
+eval_xc.${mexext}: xc_func.f eval_xc.f90
+	mex LD=g++ FC=gfortran FFLAGS=-cpp -I../ints -output eval_xc xc_func.f eval_xc.f90 
+
+getLebedevSphere.m:
+	$(eval tmpfile := $(shell mktemp))
+	$(eval tmpdir := $(shell mktemp -d))
+	wget -O ${tmpfile} http://www.mathworks.com/matlabcentral/mlc-downloads/downloads/submissions/27097/versions/1/download/zip
+	unzip -d ${tmpdir} ${tmpfile}
+	mv ${tmpdir}/$@ .
+	rm ${tmpfile}
+	rm -r ${tmpdir}
+
+xc_func.f: dfauto funcs/*.df
 	cp funcs/*.df .
-	FC=$(FC) TMPDIR= sh dfauto -s -t a4paper -x 12pt -o xc_func.f *.df
+	FC=gfortran TMPDIR= sh dfauto -s -t a4paper -x 12pt -o xc_func.f *.df
 	rm *.df
-	dvipdfm -o funcs.pdf acg.dvi > /dev/null
+	dvipdfm -o funcs.pdf acg.dvi >/dev/null
 	rm acg.*
-	mv *.tex funcs
+	rm *.tex
 
-eval_xc.$(MEXEXT) : xc_func.f eval_xc.f90
-	mex LD=g++ FC=$(FC) FFLAGS=-cpp -I../ints -output eval_xc xc_func.f eval_xc.f90 
+dfauto: dfauto.patch
+	curl "http://cpc.cs.qub.ac.uk/cpc/cgi-bin/processrequest.pl/?catid=adny_v1_0&usertype=fromsummary&deliverytype=www&email=email@example.com" | gunzip | tail -n +4 >$@
+	patch $@ $<
 
-clean : 
-	cp funcs/*.df .
-	FC=$(FC) TMPDIR= sh dfauto -r -o xc_func.f *.df
+clean: 
+	cp funcs/*.df . 
+	-FC=gfortran TMPDIR= sh dfauto -r -o xc_func.f *.df
 	-rm *.df
-	-rm funcs/*.tex
-	-rm eval_xc.$(MEXEXT)
+	-rm eval_xc.${mexext}
 	-rm funcs.pdf
 
-rebuild :
-	touch dfauto
-	make
+distclean: clean
+	-rm getLebedevSphere.m
+	-rm dfauto

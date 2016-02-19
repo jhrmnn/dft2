@@ -1,0 +1,74 @@
+--- dfauto2	2016-02-19 19:42:57.000000000 +0100
++++ dfauto	2016-02-19 19:32:20.000000000 +0100
+@@ -499,6 +499,7 @@
+ m=$i$l
+ 
+ n=`cat $expressfile | sed -e '/proc/d' -e '/end:/d' -e '/:=/d'`
++n=${n%:}
+ 
+ cat >> $tfile <<EOF
+ \begin{dmath*}
+@@ -986,6 +987,7 @@
+       include "common/cdft"
+       include "common/tapes"
+       parameter(tol=1d-12)
++      pi=acos(-1d0)
+       name='Automatically generated $FNROOT'
+       igrad=$igsh
+ FORTRAN_ENDS
+@@ -993,6 +995,7 @@
+ 
+ maple -q <<MAPLE_END
+ 
++with(CodeGeneration):
+ Digits:=21:
+ # initializations
+ f:=0:
+@@ -1007,9 +1010,9 @@
+ # read in protected names and manipulated input file
+ read("$dfpro");
+ read("$dftemp");
+-# define procedure Fortran
+-Fortran:=proc(a)
+-  fortran(evalf(a),precision=double,filename="$dftempfile2",optimized,mode=double);
++# define procedure fortran
++fortran:=proc(a)
++    Text(Fortran(evalf(a),precision=double,optimize,output=string,limitvariablelength=false));
+ end:
+ # define procedure Text
+ Text:=proc(str)
+@@ -1319,22 +1322,22 @@
+ 
+ if open_shell then
+     if excess then
+-    Fortran(rholist):
++    fortran(rholist):
+   Text("        if(rhoa.lt.tol) then"):
+-    Fortran(elistb):
++    fortran(elistb):
+   Text("        elseif(rhob.lt.tol) then"):
+-    Fortran(elista):
++    fortran(elista):
+   Text("        else"):
+-    Fortran(elist):
++    fortran(elist):
+   Text("        endif"):
+     else
+ 	if rho_deriv then
+-    Fortran(rholist):
++    fortran(rholist):
+ 	fi:
+-    Fortran(elist):
++    fortran(elist):
+     fi:
+ else
+-    Fortran(elistc):
++    fortran(elistc):
+ 
+ fi:
+ 
+@@ -1569,4 +1572,3 @@
+ fi
+ 
+ rm -f $dfpro
+-                                                                            ****
