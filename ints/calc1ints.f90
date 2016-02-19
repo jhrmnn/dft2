@@ -9,7 +9,7 @@ subroutine mexFunction(nlhs, plhs, nrhs, prhs)
     mwPointer, intent(out), dimension(*) :: plhs
     mwIndex :: i
     mwSize :: nshell, natoms, mxGetN, mxGetM, contr, nbasis
-    mwPointer :: H, S, mxGetField, mxGetPr, &
+    mwPointer :: H, S, kin, coul, harm, mxGetField, mxGetPr, &
                  mxCreateDoubleMatrix, mxDuplicateArray
     real*8 :: mxGetScalar
     integer :: l
@@ -37,12 +37,19 @@ subroutine mexFunction(nlhs, plhs, nrhs, prhs)
     end do
     plhs(1) = mxCreateDoubleMatrix(nbasis, nbasis, 0)
     plhs(2) = mxCreateDoubleMatrix(nbasis, nbasis, 0)
+    plhs(3) = mxCreateDoubleMatrix(nbasis, nbasis, 0)
+    plhs(4) = mxCreateDoubleMatrix(nbasis, nbasis, 0)
+    plhs(5) = mxCreateDoubleMatrix(nbasis, nbasis, 0)
     H = mxGetPr(plhs(1))
     S = mxGetPr(plhs(2))
-    call calc1ints(%val(H), %val(S), nbasis, basis, nshell, atoms, natoms)
-    plhs(3) = mxDuplicateArray(prhs(1))
+    kin = mxGetPr(plhs(3))
+    coul = mxGetPr(plhs(4))
+    harm = mxGetPr(plhs(5))
+    call calc1ints(%val(H), %val(S), %val(kin), %val(coul), %val(harm), &
+                   nbasis, basis, nshell, atoms, natoms)
+    plhs(6) = mxDuplicateArray(prhs(1))
     do i = 1, nshell
-        call mxCopyReal8ToPtr(basis(i)%d, mxGetPr(mxGetField(plhs(3), i, 'd')), &
+        call mxCopyReal8ToPtr(basis(i)%d, mxGetPr(mxGetField(plhs(6), i, 'd')), &
                               basis(i)%contr)
         deallocate (basis(i)%zeta, basis(i)%d)
     end do
@@ -51,21 +58,25 @@ subroutine mexFunction(nlhs, plhs, nrhs, prhs)
     return
 end
 
-subroutine calc1ints(S, H, nbasis, basis, nshell, atoms, natoms)
+subroutine calc1ints(S, H, kin, coul, harm, nbasis, basis, nshell, atoms, natoms)
     use types
     use gen1int
     implicit none
     mwSize, intent(in) :: nbasis, nshell, natoms
     type(Basis_func_t), dimension(nshell), intent(inout) :: basis
     type(Atom_t), dimension(natoms), intent(in) :: atoms
-    real(REALK), dimension(nbasis, nbasis), intent(out) :: S, H
+    real(REALK), dimension(nbasis, nbasis), intent(out) :: S, H, kin, coul, harm
     integer :: i, j, k
     mwIndex :: s0, s1
     integer :: n0, n1
     integer :: l0, l1
-    type(one_prop_t) :: one_prop_S, one_prop_H
-    integer :: num_prop_S, num_prop_H
-    real(REALK), dimension(:,:,:,:,:), allocatable :: contr_ints_S, contr_ints_H
+    type(one_prop_t) :: one_prop_S, one_prop_H, one_prop_kin, one_prop_coul, &
+                        one_prop_harm
+    integer :: num_prop_S, num_prop_H, num_prop_kin, num_prop_coul, &
+               num_prop_harm
+    real(REALK), dimension(:,:,:,:,:), allocatable :: &
+        contr_ints_S, contr_ints_H, contr_ints_kin, contr_ints_coul, &
+        contr_ints_harm
     integer :: ierr
     integer, dimension(:), allocatable :: idx
     real(REALK), dimension(3, natoms) :: coords
@@ -90,6 +101,11 @@ subroutine calc1ints(S, H, nbasis, basis, nshell, atoms, natoms)
     call OnePropCreate(prop_name=INT_ONE_HAMIL, one_prop=one_prop_H, &
                        coord_nuclei=coords, charge_nuclei=charges, info_prop=ierr)
     call OnePropGetNumProp(one_prop=one_prop_H, num_prop=num_prop_H)
+    call OnePropCreate(prop_name=INT_KIN_ENERGY, one_prop=one_prop_kin, info_prop=ierr)
+    call OnePropGetNumProp(one_prop=one_prop_kin, num_prop=num_prop_kin)
+    call OnePropCreate(prop_name=INT_POT_ENERGY, one_prop=one_prop_coul, &
+                       coord_nuclei=coords, charge_nuclei=charges, info_prop=ierr)
+    call OnePropGetNumProp(one_prop=one_prop_H, num_prop=num_prop_H)
     do s0 = 1, nshell
     do s1 = 1, nshell
         l0 = basis(s0)%l
@@ -101,6 +117,8 @@ subroutine calc1ints(S, H, nbasis, basis, nshell, atoms, natoms)
         n1 = (l1+1)*(l1+2)/2
         allocate (contr_ints_S(n0, 1, n1, 1, num_prop_S))
         allocate (contr_ints_H(n0, 1, n1, 1, num_prop_H))
+        allocate (contr_ints_kin(n0, 1, n1, 1, num_prop_kin))
+        allocate (contr_ints_coul(n0, 1, n1, 1, num_prop_coul))
         allocate (powers_bra(3, n0), powers_ket(3, n1))
         k = 1
         do i = 0, l0
@@ -150,20 +168,62 @@ subroutine calc1ints(S, H, nbasis, basis, nshell, atoms, natoms)
                                 num_opt=num_prop_H, contr_ints=contr_ints_H, &
                                 spher_gto=.false., &
                                 powers_bra=powers_bra, powers_ket=powers_ket)
+        call OnePropGetIntegral(idx_bra=1, coord_bra=basis(s0)%R, &
+                                angular_bra=basis(s0)%l, &
+                                num_prim_bra=basis(s0)%contr, &
+                                exponent_bra=basis(s0)%zeta, &
+                                num_contr_bra=1, &
+                                contr_coef_bra=basis(s0)%d, &
+                                idx_ket=1, coord_ket=basis(s1)%R, &
+                                angular_ket=basis(s1)%l, &
+                                num_prim_ket=basis(s1)%contr, &
+                                exponent_ket=basis(s1)%zeta, &
+                                num_contr_ket=1, &
+                                contr_coef_ket=basis(s1)%d, &
+                                one_prop=one_prop_kin, &
+                                num_gto_bra=n0, num_gto_ket=n1, &
+                                num_opt=num_prop_kin, contr_ints=contr_ints_kin, &
+                                spher_gto=.false., &
+                                powers_bra=powers_bra, powers_ket=powers_ket)
+        call OnePropGetIntegral(idx_bra=1, coord_bra=basis(s0)%R, &
+                                angular_bra=basis(s0)%l, &
+                                num_prim_bra=basis(s0)%contr, &
+                                exponent_bra=basis(s0)%zeta, &
+                                num_contr_bra=1, &
+                                contr_coef_bra=basis(s0)%d, &
+                                idx_ket=1, coord_ket=basis(s1)%R, &
+                                angular_ket=basis(s1)%l, &
+                                num_prim_ket=basis(s1)%contr, &
+                                exponent_ket=basis(s1)%zeta, &
+                                num_contr_ket=1, &
+                                contr_coef_ket=basis(s1)%d, &
+                                one_prop=one_prop_coul, &
+                                num_gto_bra=n0, num_gto_ket=n1, &
+                                num_opt=num_prop_coul, contr_ints=contr_ints_coul, &
+                                spher_gto=.false., &
+                                powers_bra=powers_bra, powers_ket=powers_ket)
         do i = 1, n0
         do j = 1, n1
             S(idx(s0)+i-1, idx(s1)+j-1) = contr_ints_S(i, 1, j, 1, 1)
             S(idx(s1)+j-1, idx(s0)+i-1) = contr_ints_S(i, 1, j, 1, 1)
             H(idx(s0)+i-1, idx(s1)+j-1) = contr_ints_H(i, 1, j, 1, 1)
             H(idx(s1)+j-1, idx(s0)+i-1) = contr_ints_H(i, 1, j, 1, 1)
+            kin(idx(s0)+i-1, idx(s1)+j-1) = contr_ints_kin(i, 1, j, 1, 1)
+            kin(idx(s1)+j-1, idx(s0)+i-1) = contr_ints_kin(i, 1, j, 1, 1)
+            coul(idx(s0)+i-1, idx(s1)+j-1) = contr_ints_coul(i, 1, j, 1, 1)
+            coul(idx(s1)+j-1, idx(s0)+i-1) = contr_ints_coul(i, 1, j, 1, 1)
         end do
         end do
         deallocate (powers_bra, powers_ket)
         deallocate (contr_ints_S)
         deallocate (contr_ints_H)
+        deallocate (contr_ints_kin)
+        deallocate (contr_ints_coul)
     end do
     end do
     call OnePropDestroy(one_prop=one_prop_S)
     call OnePropDestroy(one_prop=one_prop_H)
+    call OnePropDestroy(one_prop=one_prop_kin)
+    call OnePropDestroy(one_prop=one_prop_coul)
     return
 end

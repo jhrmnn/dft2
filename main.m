@@ -8,7 +8,8 @@ function main(xyzfile, basisfile, funcs)
     basisdef = read_basis(basisfile);
     basis = build_basis(basisdef, atoms);
     assert(~isempty(basis));
-    [S, H, basis] = calc1ints(basis, atoms); % also normalizes contractions
+    % also normalizes contractions
+    [S, H, kin, coul, harm, basis] = calc1ints(basis, atoms);
     if length(fieldnames(funcs)) > 1 % if any xc functional
         grid = build_grid(atoms, 50, 300);
     else
