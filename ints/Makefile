@@ -1,20 +1,26 @@
-MEXEXT:=`mexext`
-FC:=/usr/local/bin/gfortran
+mexext := $(shell mexext)
 
-all : calc1ints.$(MEXEXT) calc2ints.$(MEXEXT)
+all: calc1ints.${mexext} calc2ints.${mexext}
 
-calc1ints.$(MEXEXT) : calc1ints.f90 types.f90
-	mex LD=g++ FC=$(FC) FFLAGS=-cpp -I./gen1int/include -I./gen1int/build/modules -L./gen1int/build -lgen1int -output calc1ints types.f90 calc1ints.f90
+calc1ints.${mexext}: types.f90 calc1ints.f90 | gen1int/build/libgen1int.a
+	mex LD=g++ FC=gfortran FFLAGS=-cpp -I./gen1int/include -I./gen1int/build/modules -L./gen1int/build -lgen1int -output $@ $^
 
-calc2ints.$(MEXEXT) : calc2ints.cc
-	mex CC=c++ CXX=c++ LD=c++ -I./libint/include -L./libint/lib/.libs -lint2 calc2ints.cc
+gen1int/build/libgen1int.a:
+	mkdir -p $(dir $@)
+	cd $(dir $@) && cmake -DCMAKE_BUILD_TYPE=Release ..
+	${MAKE} -C $(dir $@)
 
-rebuild : 
-	touch calc1ints.f90 calc2ints.cc
-	make
+calc2ints.${mexext}: calc2ints.cc | libint/lib/.libs/libint2.a
+	mex -I./libint/include -L./libint/lib/.libs -lint2 $^
 
-clean :
-	-rm calc1ints.$(MEXEXT)
-	-rm calc2ints.$(MEXEXT)
-	-rm types.mod
+libint/lib/.libs/libint2.a:
+	cd libint && ./autogen.sh && mkdir -p build && cd build && ../configure
+	${MAKE} -C libint/build
 
+clean:
+	-rm *.${mexext}
+	-rm *.mod
+
+distclean: clean
+	-rm -r gen1int/build
+	${MAKE} -C libint distclean
