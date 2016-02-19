@@ -1,12 +1,2 @@
-*.swp
-*.mexmaci64
+*.mex*
 *.mod
-*.tex
-*.pdf
-data/
-dft/getLebedevSphere.m
-fmm/
-helix/
-ints/gen1int/
-ints/libint/
-misc/tprod/
