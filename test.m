@@ -1,8 +1,8 @@
 init();
 main('h2.xyz', 'cc-pvdz.bas', struct('HF', 1));
-% -1.128708947286
+fprintf('Reference: %.15f\n', -1.128708947286);
 main('h2.xyz', 'cc-pvdz.bas', struct('DIRAC', 1, 'PW92C', 1));
-% -1.131292648499
+fprintf('Reference: %.15f\n', -1.131292648499);
 %main('ch4-dimer.xyz', 'cc-pvdz.bas', struct('HF', 1));
 % -80.019571818065
 %main('ch4-dimer.xyz', 'cc-pvdz.bas', struct('DIRAC', 1, 'PW92C', 1));
