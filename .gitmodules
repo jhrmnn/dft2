@@ -1,6 +1,0 @@
-[submodule "ints/libint"]
-	path = ints/libint
-	url = https://github.com/evaleev/libint
-[submodule "ints/gen1int"]
-	path = ints/gen1int
-	url = https://gitlab.com/bingao/gen1int.git
