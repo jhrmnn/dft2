@@ -1,0 +1,17 @@
+# vim: set syntax=maple:
+
+read "basics.mpl";
+read "tpssc_base.mpl";
+
+f := rho*epsilon[Ctpps](
+           epsilon[CrevpkzbUD](
+               rho, (rho(a)-rho(b))/rho, sqrt(sigma), Z(rho, sqrt(sigma), tau/2)),
+           Z(rho, sqrt(sigma), tau/2));
+g := 0;
+G := rho(s)*epsilon[Ctpps](
+           epsilon[CrevpkzbUD](
+               rho(s), 1, sqrt(sigma(ss)), Z(rho(s), sqrt(sigma(ss)), tau(s)/2)),
+           Z(rho(s), sqrt(sigma(ss)), tau(s)/2));
+
+title := "TPSS correlation functional (EpbeUp<Epbe, EpbeDown<Epbe)";
+
