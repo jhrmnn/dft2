@@ -8,7 +8,7 @@ eval_xc.${mexext}: xc_func.f eval_xc.f90
 getLebedevSphere.m:
 	$(eval tmpfile := $(shell mktemp))
 	$(eval tmpdir := $(shell mktemp -d))
-	wget -O ${tmpfile} http://www.mathworks.com/matlabcentral/mlc-downloads/downloads/submissions/27097/versions/1/download/zip
+	wget -O ${tmpfile} http://www.mathworks.com/matlabcentral/mlc-downloads/downloads/submissions/27097/versions/1/download/zip/getLebedevSphere.zip
 	unzip -d ${tmpdir} ${tmpfile}
 	mv ${tmpdir}/$@ .
 	rm ${tmpfile}
@@ -23,7 +23,7 @@ xc_func.f: dfauto funcs/*.df
 	rm *.tex
 
 dfauto: dfauto.patch
-	curl "http://cpc.cs.qub.ac.uk/cpc/cgi-bin/processrequest.pl/?catid=adny_v1_0&usertype=fromsummary&deliverytype=www&email=email@example.com" | gunzip | tail -n +4 >$@
+	wget -O - "http://cpc.cs.qub.ac.uk/cpc/cgi-bin/processrequest.pl/?catid=adny_v1_0&usertype=fromsummary&deliverytype=www&email=" | gunzip | tail -n +4 >$@
 	patch $@ $<
 
 clean: 
